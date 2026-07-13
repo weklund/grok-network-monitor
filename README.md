@@ -148,21 +148,42 @@ PROBE_STRING_abc123
 
 These are searched for in all captured outbound traffic.
 
-## Known Findings Summary
+## Findings (as of v0.2.99)
 
-| Finding | Status |
-|---------|--------|
-| Git bundle upload infrastructure exists in binary | Confirmed |
-| Upload disabled by server-side `disable_codebase_upload` flag | Confirmed |
-| xAI can re-enable uploads remotely (no client update) | Confirmed |
-| `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` has no effect | Confirmed |
-| `/privacy opt-out` controls retention, not transmission | Confirmed |
-| Files read by grok are sent as plaintext LLM context | Confirmed |
-| 14+ telemetry events per prompt (Mixpanel + grok.com) | Confirmed |
-| ZDR (team-level) provides a second upload gate | Confirmed |
-| OTEL traces contain operational data only (no code) | Confirmed |
+| # | Finding | Status |
+|---|---------|--------|
+| 1 | Git bundle upload infrastructure exists in binary | Confirmed |
+| 2 | Upload disabled by server-side `disable_codebase_upload` flag | Confirmed |
+| 3 | xAI can re-enable uploads remotely (no client update needed) | Confirmed |
+| 4 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` has no effect | Confirmed |
+| 5 | `/privacy opt-out` controls retention, not transmission | Confirmed |
+| 6 | Files read by grok sent as plaintext to xAI (including secrets) | Confirmed |
+| 7 | 14+ telemetry events per prompt (Mixpanel + grok.com, dual-tracked) | Confirmed |
+| 8 | ZDR (team-level) provides a second upload gate | Confirmed |
+| 9 | OTEL protobuf traces contain operational data only (no code) | Confirmed |
+| 10 | Local logs record upload decisions but have limited retention | Confirmed |
 
-See [FINDINGS.md](FINDINGS.md) for detailed write-ups of each finding.
+See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence for each finding.
+
+## Recommendations (as of v0.2.99)
+
+| # | Action | Why |
+|---|--------|-----|
+| 1 | **Do not store secrets in repos where grok operates** | Any file grok reads is sent in plaintext to xAI servers |
+| 2 | **Use `.gitignore` for all sensitive files** | Gitignored files are excluded from the git bundle upload (the only protection that works) |
+| 3 | **Run `./detect-exfil.sh` to check your upload history** | Shows whether your repos were ever uploaded during the log retention window |
+| 4 | **Block `api.mixpanel.com` in /etc/hosts** | Disables analytics tracking without breaking grok functionality |
+| 5 | **Do not rely on `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1`** | Proven to have zero effect on network behavior |
+| 6 | **Do not rely on `/privacy opt-out` to prevent data transmission** | It only controls retention/training policy, not what leaves your machine |
+| 7 | **Enterprise users: ensure ZDR is enabled at the team level** | Provides a second gate against uploads even if the server flag is flipped |
+| 8 | **Monitor periodically with this toolkit** | The server flag can be changed remotely at any time — run checks after updates |
+
+### Blocking telemetry (optional, doesn't break grok)
+
+```bash
+# Block Mixpanel analytics
+echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
+```
 
 ## Comparison with cereblab/grok-data-theft
 
