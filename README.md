@@ -4,6 +4,14 @@
 
 A network monitoring harness for investigating what data xAI's "Grok Build" CLI sends to its servers. Uses mitmproxy to intercept, classify, and analyze all network traffic from the `grok` command.
 
+> Policy update on 2026-07-13 15:37 ET from a statement https://x.com/elonmusk/status/2076739687658496209
+> - xAI says previously uploaded user data will be deleted.
+> - xAI says ZDR and `/privacy` are always respected in Grok Build.
+
+Personally I treat both as policy assertions, not wire-level proof.
+
+That answers part of the retention question, but not the technical details below.
+
 ## Why This Matters
 
 xAI's Grok Build CLI has **live infrastructure to upload entire git repositories** as git bundles to xAI servers. This capability is currently disabled by a server-side flag (`disable_codebase_upload`) that xAI can flip remotely at any time -- no client update required, no user consent needed.
@@ -57,7 +65,8 @@ echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
 
 These questions remain unanswered as of this writing (2026-07-13):
 
-1. **Scope and retention of already-uploaded data.** For users who ran Grok Build before `disable_codebase_upload` was set to `true`: what repos were uploaded, how long is that data retained, and what is the deletion timeline?
+
+1. **Scope and retention of already-uploaded data.** For users who ran Grok Build before `disable_codebase_upload` was set to `true`: what repos were uploaded, how long is that data retained, and what is the deletion timeline? The public statement claims deletion of previously uploaded data, but not the exact inventory or timing.
 
 2. **Why is the upload controlled by a server-side flag rather than client-side opt-in?** The current architecture allows xAI to re-enable uploads at any time without user consent, client update, or notification. Will this be moved to a user-controlled setting?
 
@@ -65,7 +74,7 @@ These questions remain unanswered as of this writing (2026-07-13):
 
 4. **Why does `/privacy opt-out` not disable telemetry?** Mixpanel tracking and grok.com analytics events fire identically regardless of privacy opt-out status.
 
-5. **Is ZDR protection available to all users?** The `zdr_team` gate blocked uploads even when we forced `disable_codebase_upload: false`. Is ZDR available to free-tier users, or only SuperGrok/enterprise?
+5. **Is ZDR protection available to all users?** The `zdr_team` gate blocked uploads even when we forced `disable_codebase_upload: false`. xAI now says ZDR is always respected in Grok Build, but that is still a policy statement rather than a captured account matrix.
 
 6. **Will there be a public advisory?** As of this writing, there has been no official disclosure of scope, no notification to affected users, and no documented retention/deletion policy for uploaded repositories.
 
