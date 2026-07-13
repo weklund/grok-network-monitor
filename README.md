@@ -185,6 +185,28 @@ See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence
 echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
 ```
 
+## Open Questions for xAI
+
+These questions remain unanswered as of this writing (2026-07-13):
+
+1. **Scope and retention of already-uploaded data.** For users who ran Grok Build before `disable_codebase_upload` was set to `true`: what repos were uploaded, how long is that data retained, and what is the deletion timeline?
+
+2. **Why is the upload controlled by a server-side flag rather than client-side opt-in?** The current architecture allows xAI to re-enable uploads at any time without user consent, client update, or notification. Will this be moved to a user-controlled setting?
+
+3. **What does `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` actually do?** It has zero measurable effect on network behavior. Is it dead code, or does it gate something not triggered in our tests?
+
+4. **Why does `/privacy opt-out` not disable telemetry?** Mixpanel tracking and grok.com analytics events fire identically regardless of privacy opt-out status.
+
+5. **Is ZDR protection available to all users?** The `zdr_team` gate blocked uploads even when we forced `disable_codebase_upload: false`. Is ZDR available to free-tier users, or only SuperGrok/enterprise?
+
+6. **Will there be a public advisory?** As of this writing, there has been no official disclosure of scope, no notification to affected users, and no documented retention/deletion policy for uploaded repositories.
+
+7. **Why are permission-deny rules independent of the upload system?** A user who explicitly denies read access to a file should reasonably expect that file not to leave their machine. The git bundle upload ignores these rules entirely.
+
+8. **What is the log retention policy for `unified.jsonl`?** Users cannot verify whether their repos were uploaded if the log has been rotated. Is there a server-side record users can request?
+
+---
+
 ## Comparison with cereblab/grok-data-theft
 
 [cereblab's repository](https://github.com/cereblab/grok-data-theft) proved that Grok historically **did** upload repository data and captured the actual upload traffic. xAI subsequently disabled it via the server-side flag.
