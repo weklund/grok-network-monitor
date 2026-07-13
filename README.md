@@ -120,6 +120,8 @@ If the grep returns **nothing**, uploads did not occur during the logged period.
 
 ## Short-Term Remediation
 
+from @ivanfioravanti - thank you!
+
 If you want to remove Grok from a Mac right now, run the cleanup below and then manually remove the Grok init block from your shell rc file if it exists.
 
 ```bash
