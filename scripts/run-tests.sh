@@ -10,8 +10,11 @@ CAPTURE_DIR="$REPO_ROOT/captures"
 CANARY_DIR="$CAPTURE_DIR/canary-repo"
 ADDONS_DIR="$REPO_ROOT/addons"
 MARKERS_FILE="$CAPTURE_DIR/markers.txt"
-RESULTS_DIR="$CAPTURE_DIR/results-$(date +%Y%m%d-%H%M%S)"
+FLOW_STATS_ADDON="$ADDONS_DIR/flow-stats.py"
+RESULTS_BASE="$CAPTURE_DIR/results-$(date +%Y%m%d-%H%M%S)"
+RESULTS_DIR="$RESULTS_BASE"
 PROXY_PORT=8080
+GROK_RUN=0
 
 # Auto-detect grok binary
 GROK_BIN=""
@@ -25,6 +28,28 @@ else
     exit 1
 fi
 
+for command in mitmdump git strings python3; do
+    if ! command -v "$command" &>/dev/null; then
+        echo "[!] ERROR: required command not found: $command"
+        exit 1
+    fi
+done
+
+if [[ ! -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]]; then
+    echo "[!] ERROR: mitmproxy CA certificate not found. Run ./setup.sh first."
+    exit 1
+fi
+
+if lsof -nP -iTCP:"$PROXY_PORT" -sTCP:LISTEN &>/dev/null; then
+    echo "[!] ERROR: port $PROXY_PORT is already in use. Stop the existing proxy and retry."
+    exit 1
+fi
+
+while [[ -e "$RESULTS_DIR" ]]; do
+    RESULTS_DIR="${RESULTS_BASE}-$(date +%Y%m%d-%H%M%S)-$RANDOM"
+done
+mkdir -p "$RESULTS_DIR"
+
 echo "=== Grok Network Monitor - Test Suite ==="
 echo ""
 echo "  Grok binary:  $GROK_BIN"
@@ -33,19 +58,26 @@ echo "  Proxy port:   $PROXY_PORT"
 echo "  Markers file: $MARKERS_FILE"
 echo ""
 
-mkdir -p "$RESULTS_DIR"
-
 # Helper: start mitmproxy with an addon in the background
 start_proxy() {
     local addon="$1"
     local flow_file="$2"
+    local proxy_log="$3"
+    shift 3
     mitmdump --listen-port "$PROXY_PORT" \
         --set flow_detail=0 \
         -s "$addon" \
         -w "$flow_file" \
-        --quiet &
+        "$@" > "$proxy_log" 2>&1 &
     PROXY_PID=$!
-    sleep 2  # Wait for proxy to bind
+    for _ in $(seq 1 20); do
+        if ! kill -0 "$PROXY_PID" 2>/dev/null; then
+            echo "[!] ERROR: mitmproxy failed to start."
+            sed -n '1,120p' "$proxy_log" >&2 || true
+            exit 1
+        fi
+        sleep 0.1
+    done
     echo "    Proxy started (PID: $PROXY_PID)"
 }
 
@@ -65,20 +97,48 @@ run_grok_proxied() {
     shift
     local prompt="${*:-"List the files in this project and describe the architecture briefly."}"
 
-    cd "$workdir"
-    HTTPS_PROXY="http://127.0.0.1:$PROXY_PORT" \
-    HTTP_PROXY="http://127.0.0.1:$PROXY_PORT" \
-    SSL_CERT_FILE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem" \
-    "$GROK_BIN" --message "$prompt" 2>/dev/null || true
-    cd "$REPO_ROOT"
+    GROK_RUN=$((GROK_RUN + 1))
+    local grok_log="$RESULTS_DIR/grok-${GROK_RUN}.log"
+    pushd "$workdir" >/dev/null
+    local rc=0
+    if HTTPS_PROXY="http://127.0.0.1:$PROXY_PORT" \
+        HTTP_PROXY="http://127.0.0.1:$PROXY_PORT" \
+        SSL_CERT_FILE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem" \
+        "$GROK_BIN" --single "$prompt" > "$grok_log" 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
+    popd >/dev/null
+    if [[ "$rc" -ne 0 ]]; then
+        echo "    [!] Grok command failed; see $grok_log" >&2
+        return "$rc"
+    fi
+    echo "    Grok output: $grok_log"
+}
+
+summarize_flow() {
+    local flow_file="$1"
+    local stats_file="$2"
+    mitmdump -nr "$flow_file" -s "$FLOW_STATS_ADDON" \
+        --set stats_output="$stats_file" \
+        --set stats_markers_file="$MARKERS_FILE" \
+        --quiet >/dev/null 2>&1
+    [[ -s "$stats_file" ]]
+}
+
+json_value() {
+    local stats_file="$1"
+    local expression="$2"
+    python3 -c "import json; data=json.load(open('$stats_file')); print($expression)"
 }
 
 # Cleanup on exit
 trap 'stop_proxy; echo ""; echo "[*] Tests interrupted."' EXIT
 
 # Ensure canary repo exists
-if [[ ! -d "$CANARY_DIR" ]]; then
-    echo "[*] Canary repo not found, creating it..."
+if [[ ! -d "$CANARY_DIR" || ! -f "$MARKERS_FILE" ]]; then
+    echo "[*] Canary fixture or marker file missing, creating it..."
     "$SCRIPT_DIR/make-canary.sh"
     echo ""
 fi
@@ -95,12 +155,13 @@ echo ""
 FLOW_FILE="$RESULTS_DIR/test1-traces.flow"
 TRACE_OUTPUT="$RESULTS_DIR/test1-trace-strings.txt"
 
-start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE"
+start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE" "$RESULTS_DIR/test1-proxy.log"
 
 echo "    Running grok on canary repo..."
 run_grok_proxied "$CANARY_DIR"
 
 stop_proxy
+summarize_flow "$FLOW_FILE" "$RESULTS_DIR/test1-stats.json"
 
 # Extract strings from captured flow data
 echo "    Extracting protobuf strings..."
@@ -127,23 +188,23 @@ echo ""
 FLOW_FILE="$RESULTS_DIR/test2-flagflip.flow"
 FLAG_LOG="$RESULTS_DIR/test2-flag-observations.txt"
 
-start_proxy "$ADDONS_DIR/flip-upload.py" "$FLOW_FILE"
+start_proxy "$ADDONS_DIR/flip-upload.py" "$FLOW_FILE" "$RESULTS_DIR/test2-proxy.log"
 
 echo "    Running grok with upload flag flipped..."
 run_grok_proxied "$CANARY_DIR"
 
 stop_proxy
+summarize_flow "$FLOW_FILE" "$RESULTS_DIR/test2-stats.json"
 
 # Analyze the flip-upload addon output
 if [[ -f "$FLOW_FILE" ]]; then
-    # Look for upload-related activity
-    strings "$FLOW_FILE" | grep -iE '(upload|storage|bundle|codebase|trace_upload)' | sort -u > "$FLAG_LOG" 2>/dev/null || true
-    FLAG_COUNT=$(wc -l < "$FLAG_LOG" | tr -d ' ')
-    echo "    [RESULT] Found $FLAG_COUNT upload-related strings after flag flip"
+    grep -F '[FLIP]' "$RESULTS_DIR/test2-proxy.log" > "$FLAG_LOG" || true
+    UPLOAD_COUNT=$(json_value "$RESULTS_DIR/test2-stats.json" "data['categories'].get('UPLOAD', 0)")
+    echo "    [RESULT] $UPLOAD_COUNT upload-classified candidate request(s) observed after flag flip"
     echo "    Output: $FLAG_LOG"
 
-    if grep -qi "upload" "$FLAG_LOG" 2>/dev/null; then
-        echo "    [!] ALERT: Upload activity detected after flag flip!"
+    if [[ "$UPLOAD_COUNT" -gt 0 ]]; then
+        echo "    [!] ALERT: Upload-classified candidates observed after flag flip. Inspect test2-stats.json before concluding an upload occurred."
     else
         echo "    [i] No upload attempts observed (server may have additional gates)"
     fi
@@ -164,7 +225,7 @@ echo ""
 
 # Run WITHOUT the env var
 FLOW_FILE_A="$RESULTS_DIR/test3-without-envvar.flow"
-start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE_A"
+start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE_A" "$RESULTS_DIR/test3-without-envvar-proxy.log"
 echo "    Running grok WITHOUT GROK_WORKSPACE_DATA_COLLECTION_DISABLED..."
 run_grok_proxied "$CANARY_DIR"
 stop_proxy
@@ -173,29 +234,26 @@ sleep 2
 
 # Run WITH the env var
 FLOW_FILE_B="$RESULTS_DIR/test3-with-envvar.flow"
-start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE_B"
+start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE_B" "$RESULTS_DIR/test3-with-envvar-proxy.log"
 echo "    Running grok WITH GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1..."
-cd "$CANARY_DIR"
-HTTPS_PROXY="http://127.0.0.1:$PROXY_PORT" \
-HTTP_PROXY="http://127.0.0.1:$PROXY_PORT" \
-SSL_CERT_FILE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem" \
-GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1 \
-"$GROK_BIN" --message "List the files in this project." 2>/dev/null || true
-cd "$REPO_ROOT"
+GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1 run_grok_proxied "$CANARY_DIR"
 stop_proxy
 
-# Compare sizes as proxy for request count
-SIZE_A=$(wc -c < "$FLOW_FILE_A" 2>/dev/null | tr -d ' ' || echo "0")
-SIZE_B=$(wc -c < "$FLOW_FILE_B" 2>/dev/null | tr -d ' ' || echo "0")
+summarize_flow "$FLOW_FILE_A" "$RESULTS_DIR/test3-without-envvar-stats.json"
+summarize_flow "$FLOW_FILE_B" "$RESULTS_DIR/test3-with-envvar-stats.json"
+SIZE_A=$(json_value "$RESULTS_DIR/test3-without-envvar-stats.json" "data['request_bytes']")
+SIZE_B=$(json_value "$RESULTS_DIR/test3-with-envvar-stats.json" "data['request_bytes']")
+COUNT_A=$(json_value "$RESULTS_DIR/test3-without-envvar-stats.json" "data['request_count']")
+COUNT_B=$(json_value "$RESULTS_DIR/test3-with-envvar-stats.json" "data['request_count']")
 
 echo ""
 echo "    [RESULT] Traffic comparison:"
-echo "      Without env var: $SIZE_A bytes captured"
-echo "      With env var:    $SIZE_B bytes captured"
+echo "      Without env var: $COUNT_A requests, $SIZE_A request-body bytes"
+echo "      With env var:    $COUNT_B requests, $SIZE_B request-body bytes"
 
 if [[ "$SIZE_A" -gt 0 && "$SIZE_B" -gt 0 ]]; then
     RATIO=$(echo "scale=1; $SIZE_B * 100 / $SIZE_A" | bc 2>/dev/null || echo "?")
-    echo "      Ratio: ${RATIO}% (100% = identical, env var has no effect)"
+    echo "      Byte ratio: ${RATIO}% (network responses and capture metadata excluded)"
 fi
 
 echo "    Output: $RESULTS_DIR/test3-*.flow"
@@ -205,7 +263,7 @@ echo ""
 # TEST 4: Secret Detection in Outbound Traffic
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "TEST 4: Secret Detection in Outbound Traffic"
+echo "TEST 4: Secret Detection in Outbound Request Bodies"
 echo "  Goal: Run grok on canary repo, grep for marker strings"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -213,31 +271,24 @@ echo ""
 FLOW_FILE="$RESULTS_DIR/test4-secrets.flow"
 SECRETS_FOUND="$RESULTS_DIR/test4-secrets-found.txt"
 
-start_proxy "$ADDONS_DIR/capture-all.py" "$FLOW_FILE"
+start_proxy "$ADDONS_DIR/capture-all.py" "$FLOW_FILE" "$RESULTS_DIR/test4-proxy.log" --set markers_file="$MARKERS_FILE"
 
 echo "    Running grok on canary repo (asking about code)..."
 run_grok_proxied "$CANARY_DIR" "Review the database.py file and suggest improvements for security."
 
 stop_proxy
 
-# Search for markers in captured traffic
-echo "    Searching for marker strings in captured traffic..."
-> "$SECRETS_FOUND"
+    echo "    Searching outbound request bodies for marker strings..."
+    : > "$SECRETS_FOUND"
 
 if [[ -f "$FLOW_FILE" ]]; then
-    while IFS= read -r marker; do
-        # Skip comments and empty lines
-        [[ "$marker" =~ ^#.*$ ]] && continue
-        [[ -z "$marker" ]] && continue
-
-        if strings "$FLOW_FILE" | grep -q "$marker" 2>/dev/null; then
-            echo "    [!] FOUND: $marker" | tee -a "$SECRETS_FOUND"
-        fi
-    done < "$MARKERS_FILE"
-
+    summarize_flow "$FLOW_FILE" "$RESULTS_DIR/test4-stats.json"
+    python3 -c "import json; data=json.load(open('$RESULTS_DIR/test4-stats.json')); [print(hit['marker']) for hit in data['request_marker_hits']]" | sort -u | while IFS= read -r marker; do
+        [[ -n "$marker" ]] && echo "    [!] FOUND IN REQUEST: $marker" | tee -a "$SECRETS_FOUND"
+    done
     FOUND_COUNT=$(wc -l < "$SECRETS_FOUND" | tr -d ' ')
     echo ""
-    echo "    [RESULT] $FOUND_COUNT marker strings detected in outbound traffic"
+    echo "    [RESULT] $FOUND_COUNT marker strings detected in outbound request bodies"
     echo "    Output: $SECRETS_FOUND"
 else
     echo "    [RESULT] No flow file captured"
@@ -250,7 +301,7 @@ echo ""
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 5: Large Repo Egress Measurement"
-echo "  Goal: Generate 50+ file repo, measure total bytes sent"
+echo "  Goal: Generate 50+ file repo, measure total request-body bytes sent"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -263,6 +314,8 @@ rm -rf "$LARGE_REPO"
 mkdir -p "$LARGE_REPO/src" "$LARGE_REPO/lib" "$LARGE_REPO/tests"
 cd "$LARGE_REPO"
 git init --quiet
+git config user.name "Grok Network Monitor"
+git config user.email "grok-network-monitor@example.invalid"
 
 for i in $(seq 1 20); do
     cat > "src/module_${i}.py" << PYEOF
@@ -342,7 +395,7 @@ cd "$REPO_ROOT"
 LOCAL_SIZE=$(du -sb "$LARGE_REPO" 2>/dev/null | cut -f1 || du -sk "$LARGE_REPO" | awk '{print $1 * 1024}')
 echo "    Local repo size: $LOCAL_SIZE bytes"
 
-start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE"
+start_proxy "$ADDONS_DIR/classify.py" "$FLOW_FILE" "$RESULTS_DIR/test5-proxy.log"
 
 echo "    Running grok on large repo..."
 run_grok_proxied "$LARGE_REPO" "Give me an overview of this project structure and what each module does."
@@ -350,14 +403,16 @@ run_grok_proxied "$LARGE_REPO" "Give me an overview of this project structure an
 stop_proxy
 
 if [[ -f "$FLOW_FILE" ]]; then
-    EGRESS_SIZE=$(wc -c < "$FLOW_FILE" | tr -d ' ')
+    summarize_flow "$FLOW_FILE" "$RESULTS_DIR/test5-stats.json"
+    EGRESS_SIZE=$(json_value "$RESULTS_DIR/test5-stats.json" "data['request_bytes']")
+    REQUEST_COUNT=$(json_value "$RESULTS_DIR/test5-stats.json" "data['request_count']")
     echo ""
     echo "    [RESULT] Egress measurement:"
     echo "      Local repo size:    $LOCAL_SIZE bytes"
-    echo "      Total traffic:      $EGRESS_SIZE bytes"
+    echo "      Outbound request bodies: $EGRESS_SIZE bytes across $REQUEST_COUNT requests"
     if [[ "$LOCAL_SIZE" -gt 0 ]]; then
         RATIO=$(echo "scale=1; $EGRESS_SIZE * 100 / $LOCAL_SIZE" | bc 2>/dev/null || echo "?")
-        echo "      Traffic/repo ratio: ${RATIO}%"
+    echo "      Request-body/repo ratio: ${RATIO}%"
     fi
     echo "    Output: $FLOW_FILE"
 else

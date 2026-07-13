@@ -106,7 +106,7 @@ MARKERS_FILE="$CAPTURE_DIR/markers.txt"
 if [[ ! -f "$MARKERS_FILE" ]]; then
     cat > "$MARKERS_FILE" << 'EOF'
 # markers.txt - One secret/canary string per line
-# These are searched for in outbound traffic during tests
+# These are searched for in outbound request bodies during tests
 # Lines starting with # are ignored
 AKIAIOSFODNN7EXAMPLE
 sk_test_FAKEFAKEFAKEFAKEFAKE
@@ -124,6 +124,6 @@ echo "=== Setup Complete ==="
 echo ""
 echo "Quick start:"
 echo "  1. Trust the CA cert (see above)"
-echo "  2. ./scripts/make-canary.sh     # Create test repo with fake secrets"
-echo "  3. ./scripts/run-tests.sh       # Run all monitoring tests"
+echo "  2. ./scripts/run-tests.sh       # Create/rebuild the canary fixture and run all monitoring tests"
+echo "  3. ./scripts/make-canary.sh     # Optional: rebuild only the canary fixture"
 echo ""

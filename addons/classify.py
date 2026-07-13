@@ -41,12 +41,12 @@ class GrokTrafficClassifier:
         method = flow.request.method
 
         # UPLOAD: Binary uploads, storage endpoints, git bundles
-        if any(
+        if method in ("POST", "PUT", "PATCH") and any(
             x in url
             for x in ["/v1/storage", "/upload", "/bundle", "/codebase"]
         ):
             return "UPLOAD"
-        if any(
+        if method in ("POST", "PUT", "PATCH") and any(
             x in content_type
             for x in ["octet-stream", "tar", "gzip", "x-git"]
         ):

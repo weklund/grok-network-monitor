@@ -6,6 +6,21 @@ This document summarizes the findings from a network traffic analysis of xAI's "
 
 **Key Finding**: Grok Build has live infrastructure to upload entire git repositories as git bundles to xAI servers. This capability is currently disabled by a server-side flag (`disable_codebase_upload`) that xAI can flip remotely at any time without user notification or consent.
 
+## Concise Evidence Matrix
+
+| Claim | Proven here | Taken from cereblab repo | Status |
+|---|---|---|---|
+| Whole-repo git-bundle upload exists | No live upload reproduced in the current run | [README.md](https://github.com/cereblab/grok-build-exfil-repro/blob/main/README.md), [evidence/README.md](https://github.com/cereblab/grok-build-exfil-repro/blob/main/evidence/README.md) | Imported |
+| Permission deny blocks reads, not uploads | No | [permission_deny_findings.txt](https://github.com/cereblab/grok-build-exfil-repro/blob/main/evidence/permission_deny_findings.txt), [evidence/README.md](https://github.com/cereblab/grok-build-exfil-repro/blob/main/evidence/README.md) | Imported |
+| `/privacy opt-out` is retention-only | No | [PRIVACY_OPTOUT.md](https://github.com/cereblab/grok-build-exfil-repro/blob/main/PRIVACY_OPTOUT.md) | Imported |
+| `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` has no effect | Yes | Not needed | Proved here |
+| Files Grok reads are sent in plaintext | Yes | Not needed | Proved here |
+| Heavy telemetry to Mixpanel and grok.com | Yes | Not needed | Proved here |
+| ZDR is a second server-side gate | Yes, for the observed account/session | Not needed | Proved here, scoped |
+| Local logs show upload decisions but are retention-limited | Yes | Reinforced by cereblab | Proved here |
+
+The rest of this document keeps the longer explanation, but the table above is the short version: the current repo proves the live capture behavior we observed locally, while cereblab supplies the historical bundle-upload, deny-vs-upload, and privacy-opt-out evidence.
+
 ---
 
 ## Finding 1: Repository Upload Infrastructure (Currently Disabled Server-Side)

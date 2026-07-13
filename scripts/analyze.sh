@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CAPTURE_DIR="$REPO_ROOT/captures"
 MARKERS_FILE="$CAPTURE_DIR/markers.txt"
+FLOW_STATS_ADDON="$REPO_ROOT/addons/flow-stats.py"
 
 # Use provided results dir or find the most recent one
 if [[ -n "${1:-}" ]]; then
@@ -32,6 +33,27 @@ echo "  Results directory: $RESULTS_DIR"
 echo "  Analysis time:     $(date)"
 echo ""
 
+if ! command -v mitmdump &>/dev/null; then
+    echo "[!] mitmdump is required to analyze flow files. Run ./setup.sh first."
+    exit 1
+fi
+
+STATS_DIR="$RESULTS_DIR/flow-stats"
+mkdir -p "$STATS_DIR"
+
+summarize_flow() {
+    local flow_file="$1"
+    local stats_name
+    local stats_file
+    stats_name="$(basename "${flow_file%.flow}")"
+    stats_file="$STATS_DIR/$stats_name.json"
+    mitmdump -nr "$flow_file" -s "$FLOW_STATS_ADDON" \
+        --set stats_output="$stats_file" \
+        --set stats_markers_file="$MARKERS_FILE" \
+        --quiet >/dev/null 2>&1
+    printf '%s\n' "$stats_file"
+}
+
 # ============================================================
 # 1. Total bytes by host
 # ============================================================
@@ -40,34 +62,43 @@ echo "1. TRAFFIC VOLUME BY HOST"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-TOTAL_BYTES=0
+TOTAL_REQUEST_BYTES=0
+TOTAL_REQUESTS=0
 for flow_file in "$RESULTS_DIR"/*.flow; do
     [[ -f "$flow_file" ]] || continue
-    SIZE=$(wc -c < "$flow_file" | tr -d ' ')
-    TOTAL_BYTES=$((TOTAL_BYTES + SIZE))
+    summarize_flow "$flow_file" >/dev/null
 done
 
-echo "  Total captured traffic: $TOTAL_BYTES bytes ($(echo "scale=2; $TOTAL_BYTES / 1024" | bc 2>/dev/null || echo "?") KB)"
+for stats_file in "$STATS_DIR"/*.json; do
+    [[ -f "$stats_file" ]] || continue
+    REQUEST_BYTES=$(python3 -c "import json; print(json.load(open('$stats_file'))['request_bytes'])")
+    REQUESTS=$(python3 -c "import json; print(json.load(open('$stats_file'))['request_count'])")
+    TOTAL_REQUEST_BYTES=$((TOTAL_REQUEST_BYTES + REQUEST_BYTES))
+    TOTAL_REQUESTS=$((TOTAL_REQUESTS + REQUESTS))
+done
+
+echo "  Outbound request bodies: $TOTAL_REQUEST_BYTES bytes across $TOTAL_REQUESTS requests"
+echo "  (Responses and mitmproxy archive metadata are excluded.)"
 echo ""
 
-# Extract hostnames from flow files
-echo "  Hosts observed (extracted from flow data):"
-for flow_file in "$RESULTS_DIR"/*.flow; do
-    [[ -f "$flow_file" ]] || continue
-    strings "$flow_file" | grep -oE '[a-zA-Z0-9.-]+\.(grok\.com|xai\.com|x\.ai|mixpanel\.com|amazonaws\.com)' | sort -u
-done | sort -u | while read -r host; do
+# Extract hostnames from decoded request metadata.
+echo "  Hosts observed in requests:"
+python3 -c "import glob,json; print('\\n'.join(sorted({host for path in glob.glob('$STATS_DIR/*.json') for host in json.load(open(path))['hosts']})))" | while IFS= read -r host; do
+    [[ -z "$host" ]] && continue
     echo "    - $host"
 done
 
 echo ""
 
 # Per-file breakdown
-echo "  Per-capture breakdown:"
+echo "  Per-capture request-body breakdown:"
 for flow_file in "$RESULTS_DIR"/*.flow; do
     [[ -f "$flow_file" ]] || continue
-    SIZE=$(wc -c < "$flow_file" | tr -d ' ')
     BASENAME=$(basename "$flow_file")
-    printf "    %-40s %s bytes\n" "$BASENAME" "$SIZE"
+    STATS_FILE="$STATS_DIR/${BASENAME%.flow}.json"
+    REQUEST_BYTES=$(python3 -c "import json; print(json.load(open('$STATS_FILE'))['request_bytes'])")
+    REQUESTS=$(python3 -c "import json; print(json.load(open('$STATS_FILE'))['request_count'])")
+    printf "    %-40s %s bytes across %s requests\n" "$BASENAME" "$REQUEST_BYTES" "$REQUESTS"
 done
 
 echo ""
@@ -120,13 +151,7 @@ else
         [[ -z "$marker" ]] && continue
         SECRETS_TOTAL=$((SECRETS_TOTAL + 1))
 
-        FOUND_IN=""
-        for flow_file in "$RESULTS_DIR"/*.flow; do
-            [[ -f "$flow_file" ]] || continue
-            if strings "$flow_file" | grep -q "$marker" 2>/dev/null; then
-                FOUND_IN="$FOUND_IN $(basename "$flow_file")"
-            fi
-        done
+        FOUND_IN=$(python3 -c "import glob,json,os,sys; marker=sys.argv[1]; print(' '.join(os.path.basename(path).replace('.json','.flow') for path in glob.glob(sys.argv[2] + '/*.json') if any(hit['marker'] == marker for hit in json.load(open(path))['request_marker_hits'])))" "$marker" "$STATS_DIR")
 
         if [[ -n "$FOUND_IN" ]]; then
             SECRETS_DETECTED=$((SECRETS_DETECTED + 1))
@@ -138,13 +163,12 @@ else
     done < "$MARKERS_FILE"
 
     echo ""
-    echo "  Summary: $SECRETS_DETECTED / $SECRETS_TOTAL markers detected in outbound traffic"
+    echo "  Summary: $SECRETS_DETECTED / $SECRETS_TOTAL markers detected in outbound request bodies"
 
     if [[ "$SECRETS_DETECTED" -gt 0 ]]; then
         echo ""
-        echo "  WARNING: Secrets from your working directory were transmitted to xAI servers."
-        echo "  This is expected for files grok reads as LLM context, but confirms that"
-        echo "  sensitive files should never be in a grok-accessible workspace."
+        echo "  A requested canary marker was present in an outbound request body."
+        echo "  Inspect the matching flow before generalizing the result beyond that run."
     fi
 fi
 
@@ -191,13 +215,15 @@ echo ""
 for flow_file in "$RESULTS_DIR"/*.flow; do
     [[ -f "$flow_file" ]] || continue
 
-    MIXPANEL=$(strings "$flow_file" | grep -ci "mixpanel" 2>/dev/null || echo "0")
-    TELEMETRY=$(strings "$flow_file" | grep -ci "telemetry\|event\|track" 2>/dev/null || echo "0")
+    BASENAME=$(basename "$flow_file")
+    STATS_FILE="$STATS_DIR/${BASENAME%.flow}.json"
+    TELEMETRY=$(python3 -c "import json; print(json.load(open('$STATS_FILE'))['categories'].get('TELEMETRY', 0))")
+    LLM_CALLS=$(python3 -c "import json; print(json.load(open('$STATS_FILE'))['categories'].get('LLM_CALL', 0))")
 
-    if [[ "$MIXPANEL" -gt 0 || "$TELEMETRY" -gt 0 ]]; then
-        echo "  $(basename "$flow_file"):"
-        echo "    Mixpanel references: $MIXPANEL"
-        echo "    Telemetry keywords:  $TELEMETRY"
+    if [[ "$TELEMETRY" -gt 0 || "$LLM_CALLS" -gt 0 ]]; then
+        echo "  $BASENAME:"
+        echo "    Telemetry-classified requests: $TELEMETRY"
+        echo "    LLM-call-classified requests:  $LLM_CALLS"
     fi
 done
 
@@ -211,7 +237,7 @@ echo "ANALYSIS COMPLETE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "  Key findings:"
-echo "    - Total traffic captured: $TOTAL_BYTES bytes"
+echo "    - Outbound request bodies: $TOTAL_REQUEST_BYTES bytes across $TOTAL_REQUESTS requests"
 echo "    - Alert files generated: $ALERT_COUNT"
 echo "    - Secret markers in traffic: ${SECRETS_DETECTED:-0} / ${SECRETS_TOTAL:-0}"
 echo "    - Settings flags observed: $FLAGS_FOUND captures"

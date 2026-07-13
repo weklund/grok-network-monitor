@@ -129,7 +129,10 @@ mode_live() {
 # ============================================================
 mode_quick() {
     local duration="${1:-30}"
-    local flow_file="$CAPTURE_DIR/quick-$(date +%Y%m%d-%H%M%S).flow"
+    local timestamp
+    local flow_file
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    flow_file="$CAPTURE_DIR/quick-$timestamp.flow"
 
     echo "=== Quick Capture (${duration}s) ==="
     echo ""
@@ -147,11 +150,20 @@ mode_quick() {
 
     mkdir -p "$CAPTURE_DIR"
 
-    # Run mitmdump with timeout
-    timeout "$duration" mitmdump \
+    # Run mitmdump with a portable timer so the script works without GNU timeout.
+    mitmdump \
         --listen-port "$PROXY_PORT" \
         -s "$ADDONS_DIR/classify.py" \
-        -w "$flow_file" 2>&1 || true
+        -w "$flow_file" 2>&1 &
+    local proxy_pid=$!
+    (
+        sleep "$duration"
+        kill "$proxy_pid" 2>/dev/null || true
+    ) &
+    local timer_pid=$!
+    wait "$proxy_pid" 2>/dev/null || true
+    kill "$timer_pid" 2>/dev/null || true
+    wait "$timer_pid" 2>/dev/null || true
 
     echo ""
     echo "  Capture complete: $flow_file"
