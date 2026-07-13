@@ -118,6 +118,28 @@ If the grep returns **nothing**, uploads did not occur during the logged period.
 
 > **Note:** The command `grep "repo_state.upload"` circulating online uses the wrong message key and will return nothing. The correct key is `trace.upload.decision`.
 
+## Short-Term Remediation
+
+If you want to remove Grok from a Mac right now, run the cleanup below and then manually remove the Grok init block from your shell rc file if it exists.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+rm -rf "$HOME/.grok"
+rm -f "$HOME/.config/fish/completions/grok.fish"
+rm -f /usr/local/bin/grok /usr/local/bin/agent
+rm -f "$HOME/.local/bin/grok" "$HOME/.local/bin/agent"
+
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  [[ -f "$rc" ]] || continue
+  cp "$rc" "$rc.bak.$(date +%Y%m%d-%H%M%S)"
+  echo "Review and remove any Grok init block from: $rc"
+done
+```
+
+If you prefer to do it manually, remove the same files and then search your shell startup files for a Grok-specific section, path export, or alias block before starting a new shell.
+
 ## Repository Structure
 
 ```
