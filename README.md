@@ -89,10 +89,8 @@ These questions remain unanswered as of this writing (2026-07-13):
 # 1. Install dependencies and configure CA trust
 chmod +x setup.sh && ./setup.sh
 
-# 2. Create the honeypot test repository
-./scripts/make-canary.sh
-
-# 3. Run all 5 monitoring tests
+# 2. Run all 5 monitoring tests. This creates/recreates the fake-secret
+#    canary repository and marker file when they are missing.
 ./scripts/run-tests.sh
 ```
 
@@ -137,6 +135,7 @@ grok-network-monitor/
 │   ├── capture-all.py    # Full body capture + secret detection
 │   ├── flip-upload.py    # Rewrites server flags to test upload behavior
 │   └── dump-telemetry.py # Decodes Mixpanel base64 + grok.com events
+│   └── flow-stats.py     # Request-only metrics and marker detection
 ├── monitor.sh            # Quick interactive monitoring (no root needed)
 └── detect-exfil.sh       # One-shot local artifact scan (no proxy)
 ```
@@ -150,29 +149,29 @@ Captures OTEL (OpenTelemetry) traces sent to `/v1/traces` and extracts readable 
 Rewrites the `/v1/settings` response to set `disable_codebase_upload: false` and `trace_upload_enabled: true`. Monitors whether the client attempts to upload repository data when the server-side gate is removed.
 
 ### Test 3: Environment Variable Comparison
-Runs grok twice -- once normally, once with `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` -- and compares total traffic volume. Demonstrates the env var has no effect.
+Runs grok twice with the same prompt -- once normally, once with `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` -- and compares outbound request counts and request-body bytes. It records an observation; repeated runs are needed before drawing a conclusion because service and session state can vary.
 
 ### Test 4: Secret Detection
-Runs grok on the canary repository (which contains planted fake secrets) and searches all outbound traffic for marker strings. Proves that file contents are sent in plaintext.
+Runs grok on the canary repository (which contains planted fake secrets) and searches outbound request bodies only for marker strings. A match demonstrates that the requested canary content was transmitted in plaintext.
 
 ### Test 5: Large Repo Egress
-Generates a 50+ file repository and measures total bytes sent during a single interaction. Quantifies how much data leaves your machine per prompt.
+Generates a 50+ file repository and reports outbound request-body bytes during a single interaction. It excludes response data and mitmproxy archive metadata.
 
 ## Expected Output
 
 ```
-TEST 4: Secret Detection in Outbound Traffic
+TEST 4: Secret Detection in Outbound Request Bodies
   Goal: Run grok on canary repo, grep for marker strings
 
     Running grok on canary repo (asking about code)...
-    Searching for marker strings in captured traffic...
-    [!] FOUND: AKIAIOSFODNN7EXAMPLE
-    [!] FOUND: sk_test_FAKEFAKEFAKEFAKEFAKE
-    [!] FOUND: sk-proj-FAKE-openai-key-1234567890
-    [!] FOUND: super_secret_database_password_12345
-    [!] FOUND: production-api-key-do-not-share
+    Searching outbound request bodies for marker strings...
+    [!] FOUND IN REQUEST: AKIAIOSFODNN7EXAMPLE
+    [!] FOUND IN REQUEST: sk_test_FAKEFAKEFAKEFAKEFAKE
+    [!] FOUND IN REQUEST: sk-proj-FAKE-openai-key-1234567890
+    [!] FOUND IN REQUEST: super_secret_database_password_12345
+    [!] FOUND IN REQUEST: production-api-key-do-not-share
 
-    [RESULT] 5 marker strings detected in outbound traffic
+    [RESULT] 6 marker strings detected in outbound request bodies
 ```
 
 ## Standalone Tools
@@ -205,7 +204,7 @@ another-canary-value
 PROBE_STRING_abc123
 ```
 
-These are searched for in all captured outbound traffic.
+These are searched for in all captured outbound request bodies.
 
 ## Comparison with cereblab/grok-data-theft
 

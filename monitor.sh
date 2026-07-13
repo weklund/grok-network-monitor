@@ -129,7 +129,10 @@ mode_live() {
 # ============================================================
 mode_quick() {
     local duration="${1:-30}"
-    local flow_file="$CAPTURE_DIR/quick-$(date +%Y%m%d-%H%M%S).flow"
+    local timestamp
+    local flow_file
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    flow_file="$CAPTURE_DIR/quick-$timestamp.flow"
 
     echo "=== Quick Capture (${duration}s) ==="
     echo ""

@@ -151,12 +151,12 @@ class UploadFlagFlipper:
         payload_size = len(flow.request.content) if flow.request.content else 0
 
         # Check for upload-indicating URLs
-        is_upload_url = any(
+        is_upload_url = method in ("POST", "PUT", "PATCH") and any(
             x in url for x in ["/v1/storage", "/upload", "/bundle", "/codebase"]
         )
 
         # Check for binary content types
-        is_binary = any(
+        is_binary = method in ("POST", "PUT", "PATCH") and any(
             x in content_type
             for x in ["octet-stream", "tar", "gzip", "x-git", "x-bundle"]
         )
