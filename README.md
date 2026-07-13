@@ -170,7 +170,7 @@ See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence
 | # | Action | Why |
 |---|--------|-----|
 | 1 | **Do not store secrets in repos where grok operates** | Any file grok reads is sent in plaintext to xAI servers |
-| 2 | **Use `.gitignore` for all sensitive files** | Gitignored files are excluded from the git bundle upload (the only protection that works) |
+| 2 | **Use `.gitignore` for all sensitive files** | Gitignored files are excluded from the git bundle upload ([proven by cereblab's captured bundles](https://github.com/cereblab/grok-build-exfil-repro) — the only protection that works) |
 | 3 | **Run `./detect-exfil.sh` to check your upload history** | Shows whether your repos were ever uploaded during the log retention window |
 | 4 | **Block `api.mixpanel.com` in /etc/hosts** | Disables analytics tracking without breaking grok functionality |
 | 5 | **Do not rely on `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1`** | Proven to have zero effect on network behavior |
