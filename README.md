@@ -57,7 +57,7 @@ echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
 
 These questions remain unanswered as of this writing (2026-07-13):
 
-Policy update from a public statement on X:
+Policy update recorded on 2026-07-13 from a public statement on X:
 
 - xAI says previously uploaded user data will be deleted.
 - xAI says ZDR and `/privacy` are always respected in Grok Build.
