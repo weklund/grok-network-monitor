@@ -16,6 +16,65 @@ Additionally:
 
 This toolkit lets you verify these findings yourself and monitor for changes.
 
+## Findings (as of v0.2.99)
+
+| # | Finding | Status |
+|---|---------|--------|
+| 1 | Git bundle upload infrastructure exists in binary | Confirmed |
+| 2 | Upload disabled by server-side `disable_codebase_upload` flag | Confirmed |
+| 3 | xAI can re-enable uploads remotely (no client update needed) | Confirmed |
+| 4 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` has no effect | Confirmed |
+| 5 | `/privacy opt-out` controls retention, not transmission | Confirmed |
+| 6 | Files read by grok sent as plaintext to xAI (including secrets) | Confirmed |
+| 7 | 14+ telemetry events per prompt (Mixpanel + grok.com, dual-tracked) | Confirmed |
+| 8 | ZDR (team-level) provides a second upload gate | Confirmed |
+| 9 | OTEL protobuf traces contain operational data only (no code) | Confirmed |
+| 10 | Local logs record upload decisions but have limited retention | Confirmed |
+
+See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence for each finding.
+
+## Recommendations (as of v0.2.99)
+
+| # | Action | Why |
+|---|--------|-----|
+| 1 | **Do not store secrets in repos where grok operates** | Any file grok reads is sent in plaintext to xAI servers |
+| 2 | **Use `.gitignore` for all sensitive files** | Gitignored files are excluded from the git bundle upload ([proven by cereblab's captured bundles](https://github.com/cereblab/grok-build-exfil-repro) — the only protection that works) |
+| 3 | **Run `./detect-exfil.sh` to check your upload history** | Shows whether your repos were ever uploaded during the log retention window |
+| 4 | **Block `api.mixpanel.com` in /etc/hosts** | Disables analytics tracking without breaking grok functionality |
+| 5 | **Do not rely on `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1`** | Proven to have zero effect on network behavior |
+| 6 | **Do not rely on `/privacy opt-out` to prevent data transmission** | It only controls retention/training policy, not what leaves your machine |
+| 7 | **Enterprise users: ensure ZDR is enabled at the team level** | Provides a second gate against uploads even if the server flag is flipped |
+| 8 | **Monitor periodically with this toolkit** | The server flag can be changed remotely at any time — run checks after updates |
+
+### Blocking telemetry (optional, doesn't break grok)
+
+```bash
+# Block Mixpanel analytics
+echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
+```
+
+## Open Questions for xAI
+
+These questions remain unanswered as of this writing (2026-07-13):
+
+1. **Scope and retention of already-uploaded data.** For users who ran Grok Build before `disable_codebase_upload` was set to `true`: what repos were uploaded, how long is that data retained, and what is the deletion timeline?
+
+2. **Why is the upload controlled by a server-side flag rather than client-side opt-in?** The current architecture allows xAI to re-enable uploads at any time without user consent, client update, or notification. Will this be moved to a user-controlled setting?
+
+3. **What does `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` actually do?** It has zero measurable effect on network behavior. Is it dead code, or does it gate something not triggered in our tests?
+
+4. **Why does `/privacy opt-out` not disable telemetry?** Mixpanel tracking and grok.com analytics events fire identically regardless of privacy opt-out status.
+
+5. **Is ZDR protection available to all users?** The `zdr_team` gate blocked uploads even when we forced `disable_codebase_upload: false`. Is ZDR available to free-tier users, or only SuperGrok/enterprise?
+
+6. **Will there be a public advisory?** As of this writing, there has been no official disclosure of scope, no notification to affected users, and no documented retention/deletion policy for uploaded repositories.
+
+7. **Why are permission-deny rules independent of the upload system?** A user who explicitly denies read access to a file should reasonably expect that file not to leave their machine. The git bundle upload ignores these rules entirely.
+
+8. **What is the log retention policy for `unified.jsonl`?** Users cannot verify whether their repos were uploaded if the log has been rotated. Is there a server-side record users can request?
+
+---
+
 ## Prerequisites
 
 - **macOS** or **Linux**
@@ -147,65 +206,6 @@ PROBE_STRING_abc123
 ```
 
 These are searched for in all captured outbound traffic.
-
-## Findings (as of v0.2.99)
-
-| # | Finding | Status |
-|---|---------|--------|
-| 1 | Git bundle upload infrastructure exists in binary | Confirmed |
-| 2 | Upload disabled by server-side `disable_codebase_upload` flag | Confirmed |
-| 3 | xAI can re-enable uploads remotely (no client update needed) | Confirmed |
-| 4 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` has no effect | Confirmed |
-| 5 | `/privacy opt-out` controls retention, not transmission | Confirmed |
-| 6 | Files read by grok sent as plaintext to xAI (including secrets) | Confirmed |
-| 7 | 14+ telemetry events per prompt (Mixpanel + grok.com, dual-tracked) | Confirmed |
-| 8 | ZDR (team-level) provides a second upload gate | Confirmed |
-| 9 | OTEL protobuf traces contain operational data only (no code) | Confirmed |
-| 10 | Local logs record upload decisions but have limited retention | Confirmed |
-
-See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence for each finding.
-
-## Recommendations (as of v0.2.99)
-
-| # | Action | Why |
-|---|--------|-----|
-| 1 | **Do not store secrets in repos where grok operates** | Any file grok reads is sent in plaintext to xAI servers |
-| 2 | **Use `.gitignore` for all sensitive files** | Gitignored files are excluded from the git bundle upload ([proven by cereblab's captured bundles](https://github.com/cereblab/grok-build-exfil-repro) — the only protection that works) |
-| 3 | **Run `./detect-exfil.sh` to check your upload history** | Shows whether your repos were ever uploaded during the log retention window |
-| 4 | **Block `api.mixpanel.com` in /etc/hosts** | Disables analytics tracking without breaking grok functionality |
-| 5 | **Do not rely on `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1`** | Proven to have zero effect on network behavior |
-| 6 | **Do not rely on `/privacy opt-out` to prevent data transmission** | It only controls retention/training policy, not what leaves your machine |
-| 7 | **Enterprise users: ensure ZDR is enabled at the team level** | Provides a second gate against uploads even if the server flag is flipped |
-| 8 | **Monitor periodically with this toolkit** | The server flag can be changed remotely at any time — run checks after updates |
-
-### Blocking telemetry (optional, doesn't break grok)
-
-```bash
-# Block Mixpanel analytics
-echo "127.0.0.1 api.mixpanel.com" | sudo tee -a /etc/hosts
-```
-
-## Open Questions for xAI
-
-These questions remain unanswered as of this writing (2026-07-13):
-
-1. **Scope and retention of already-uploaded data.** For users who ran Grok Build before `disable_codebase_upload` was set to `true`: what repos were uploaded, how long is that data retained, and what is the deletion timeline?
-
-2. **Why is the upload controlled by a server-side flag rather than client-side opt-in?** The current architecture allows xAI to re-enable uploads at any time without user consent, client update, or notification. Will this be moved to a user-controlled setting?
-
-3. **What does `GROK_WORKSPACE_DATA_COLLECTION_DISABLED=1` actually do?** It has zero measurable effect on network behavior. Is it dead code, or does it gate something not triggered in our tests?
-
-4. **Why does `/privacy opt-out` not disable telemetry?** Mixpanel tracking and grok.com analytics events fire identically regardless of privacy opt-out status.
-
-5. **Is ZDR protection available to all users?** The `zdr_team` gate blocked uploads even when we forced `disable_codebase_upload: false`. Is ZDR available to free-tier users, or only SuperGrok/enterprise?
-
-6. **Will there be a public advisory?** As of this writing, there has been no official disclosure of scope, no notification to affected users, and no documented retention/deletion policy for uploaded repositories.
-
-7. **Why are permission-deny rules independent of the upload system?** A user who explicitly denies read access to a file should reasonably expect that file not to leave their machine. The git bundle upload ignores these rules entirely.
-
-8. **What is the log retention policy for `unified.jsonl`?** Users cannot verify whether their repos were uploaded if the log has been rotated. Is there a server-side record users can request?
-
----
 
 ## Comparison with cereblab/grok-data-theft
 
