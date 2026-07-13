@@ -1,5 +1,7 @@
 # Grok Network Monitor
 
+> **Confirmed on Grok Build v0.2.99** (`grok-0.2.99-macos-aarch64`, July 13 2026). Findings are version-specific — behavior may change in future releases.
+
 A network monitoring harness for investigating what data xAI's "Grok Build" CLI sends to its servers. Uses mitmproxy to intercept, classify, and analyze all network traffic from the `grok` command.
 
 ## Why This Matters
