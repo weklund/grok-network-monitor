@@ -43,7 +43,7 @@ to the confidence legend under the table.
 
 ---
 
-## The one genuinely new capability: Cursor session import (dormant)
+## The new capability: Cursor session import (dormant)
 
 v0.2.101 adds machinery to read **Cursor's** local chat database. The binary contains
 this literal SQL (absent in v0.2.99) [CNT]:
