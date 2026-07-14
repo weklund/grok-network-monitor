@@ -2,7 +2,7 @@
 
 > **Confirmed on Grok Build v0.2.99** (`grok-0.2.99-macos-aarch64`, July 13 2026). Findings are version-specific — behavior may change in future releases.
 >
-> **Update — v0.2.101** (2026-07-14): re-tested after auto-update. All v0.2.99 findings still hold. New: a **Cursor chat-DB import capability** was added to the binary but is **not yet reachable** by any command (dormant/staged). See **[FINDINGS-v0.2.101.md](FINDINGS-v0.2.101.md)** for the full delta.
+> **Update — v0.2.101** (2026-07-14): re-tested after auto-update. The kill-switch flag (`disable_codebase_upload`) and the core upload spine (`serialize_repo_changes` → archive → GCS/storage-proxy) still ship, so the capability and the risk stand. But the upload infra is **not** byte-for-byte identical: the git-**bundle** upload coordinator and base-tree dedup/batch layer were **stripped** (a partial refactor, not a removal — intent unknown, no decompilation). A dormant **Cursor chat-DB reader** was also added but is **not reachable** by any command. See **[FINDINGS-v0.2.101.md](FINDINGS-v0.2.101.md)** for the byte-verified delta.
 
 A network monitoring harness for investigating what data xAI's "Grok Build" CLI sends to its servers. Uses mitmproxy to intercept, classify, and analyze all network traffic from the `grok` command.
 
