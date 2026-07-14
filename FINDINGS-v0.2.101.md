@@ -35,7 +35,7 @@ to the confidence legend under the table.
 | 3 | Cursor reader reachable by a shipped command? | n/a | **no — dormant** | No command triggers it (registry) *and* it never fired in a live proxied session (observed traffic, [RUN]+[REG]) |
 | 4 | `cursor_*_enabled` server flags + `codex_sessions_enabled` | absent | **present** (parallel to existing `claude_*_enabled`) | The flag strings exist in the binary (present in binary, [BIN]) |
 | 5 | Generalized "foreign sessions" backend (Cursor + Codex slots) | — | **present** | Backend/slot strings exist in the binary (present in binary, [BIN]) |
-| 6 | Codebase-upload infra (S3/GCS multipart, `disable_codebase_upload`, bucket `grok-code-session-traces`) | present | **unchanged** | Same marker counts in both binaries — nothing added or removed (count diff, [CNT]) |
+| 6 | Codebase-upload infra (top-level: `serialize_repo_changes`, tar/GCS/storage-proxy, `disable_codebase_upload`, bucket `grok-code-session-traces`) | present | **core path persists, bundle-upload layer stripped** — see §"Upload path changes" below | Raw-byte count diff across both binaries (count diff, [CNT]) |
 | 7 | Mixpanel + grok.com dual telemetry | present | **present, persists** | Watched both fire over the wire this version (observed traffic, [RUN]) |
 | 8 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED` env var | present, no effect | **unchanged in binary** | The string is still present; its runtime effect was not re-measured (present in binary, [BIN]) |
 | 9 | Binary string count | 89,072 | 89,196 (+124 net) | Total `strings` count per binary (count diff, [CNT]) |
@@ -78,6 +78,43 @@ shipped** — present ahead of its user-facing front door. This is the same patt
 codebase-upload feature documented in v0.2.99 (capability live, gated server-side).
 
 Reproduce with `scripts/make-cursor-honeypot.sh` + `addons/detect-cursor-import.py`.
+
+---
+
+## Upload path changes: bundle-upload layer stripped, core spine intact
+
+An earlier draft of this document called the codebase-upload infrastructure
+"unchanged." That was wrong — it came from a tokenized string diff that masked the
+change. A **raw-byte** count (`grep -a -F` over the whole Mach-O, not `strings`, to rule
+out tokenization artifacts) shows a specific implementation layer was **removed** in
+v0.2.101, while the high-level upload spine remains.
+
+**Removed entirely in v0.2.101** (raw-byte occurrences → 0) [CNT]:
+
+| Marker | v0.2.99 | v0.2.101 |
+|--------|:---:|:---:|
+| `upload_coordinator` / `repo_state.upload_coordinator` | 3 | **0** |
+| `git bundle create` / `bundle_create_failed` / `bundle_upload_failed` / `bundle too large` | 1 each | **0** |
+| `flush_base_tree_batch` / `batch_upload` / `check_exists` / `Base tree upload complete` (base-tree dedup+batch layer) | 2–5 | **0** |
+| `S3 storage client` | 1 | **0** |
+| `repo_changes/mod.rs` / `upload_blocked` / `probe blocked` | 1–2 | **0** |
+
+**Still present in v0.2.101** (unchanged) [BIN]:
+
+- `serialize_repo_changes` (top-level entry point), `Wrote repo changes archive`
+- `multipart upload`, `storage proxy`, `GCS URL`, `Failed to upload to gs://`
+- `disable_codebase_upload` (×4), `first-parent history`, `public base`, `serialize_repo_changes_with_dedup`
+
+The binary also shrank ~225 KB (129,124,976 → 128,899,824 bytes).
+
+**[INF]** This reads as a **partial teardown / refactor, not a removal of the
+capability.** The "collect repo changes → build archive → upload via GCS/storage-proxy"
+spine and the server kill-switch flag both survive; what's gone is the git-*bundle*
+upload *coordinator* and the base-tree dedup/batch machinery. Two readings fit the strings
+equally well: (a) the bundle strategy was retired in favor of the tar+GCS path that
+remains, or (b) genuine slimming. **`strings` alone cannot distinguish these, and no
+decompilation was performed** — so intent is unknown. What is byte-verified is only that
+these specific symbols are present in 0.2.99 and absent in 0.2.101.
 
 ---
 
