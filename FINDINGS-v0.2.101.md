@@ -46,14 +46,28 @@ to the confidence legend under the table.
 ## The new capability: Cursor session import (dormant)
 
 v0.2.101 adds machinery to read **Cursor's** local chat database. The binary contains
-this literal SQL (absent in v0.2.99) [CNT]:
+these two literal SQL strings (both absent in v0.2.99) [CNT], reproduced **verbatim**
+below. The blank spots (`<= `, `BETWEEN ?1 AND ?2`, `ORDER BY  DESC`, `LIMIT`) are not
+truncation — they are where the byte caps, timestamp params, sort column, and row limit
+get substituted at runtime:
 
 ```sql
-SELECT composerId, lastUpdatedAt, value FROM composerHeaders
-  WHERE COALESCE(isArchived,0)=0 AND COALESCE(isSubagent,0)=0
-        AND lastUpdatedAt BETWEEN ?1 AND ?2 ...
-SELECT key, value FROM meta WHERE key IN ('metadata','title','name','cwd',...)
+-- Enumerate the user's Cursor conversations (composers)
+SELECT composerId, lastUpdatedAt, value FROM composerHeaders WHERE typeof(composerId) = 'text' AND typeof(value) = 'text' AND typeof(lastUpdatedAt) = 'integer' AND typeof(isArchived) IN ('integer', 'null') AND typeof(isSubagent) IN ('integer', 'null')  AND COALESCE(isArchived, 0) = 0 AND COALESCE(isSubagent, 0) = 0 AND lastUpdatedAt BETWEEN ?1 AND ?2 AND octet_length(composerId) <=  AND octet_length(value) <=  ORDER BY  DESC, composerId ASC LIMIT
+
+-- Pull each conversation's metadata (title, name, working dir, etc.)
+SELECT key, value FROM meta WHERE key IN ('0', 'metadata', 'updatedAtMs', 'title', 'name', 'cwd') AND typeof(value) = 'text' AND octet_length(value) <=  ORDER BY CASE key WHEN '0' THEN 0 WHEN 'metadata' THEN 1 WHEN 'updatedAtMs' THEN 2 WHEN 'title' THEN 3 WHEN 'name' THEN 4 WHEN 'cwd' THEN 5 ELSE 6 END LIMIT 32
 ```
+
+**Reproduce it yourself** — run this against your own installed binary (works on any Mac
+with grok installed; `~/.grok/bin/grok` symlinks to the current version):
+
+```bash
+strings ~/.grok/bin/grok | grep -o "SELECT composerId.*composerHeaders.*LIMIT"
+```
+
+If it prints the query, your build has the Cursor reader. If it prints nothing, your
+build doesn't (e.g. a pre-0.2.101 or a future build that removed it).
 
 It reads from `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
 and a new server-flag family gates it: `cursor_sessions_enabled`, `cursor_rules_enabled`,
