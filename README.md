@@ -1,6 +1,8 @@
 # Grok Network Monitor
 
 > **Confirmed on Grok Build v0.2.99** (`grok-0.2.99-macos-aarch64`, July 13 2026). Findings are version-specific — behavior may change in future releases.
+>
+> **Update — v0.2.101** (2026-07-14): re-tested after auto-update. All v0.2.99 findings still hold. New: a **Cursor chat-DB import capability** was added to the binary but is **not yet reachable** by any command (dormant/staged). See **[FINDINGS-v0.2.101.md](FINDINGS-v0.2.101.md)** for the full delta.
 
 A network monitoring harness for investigating what data xAI's "Grok Build" CLI sends to its servers. Uses mitmproxy to intercept, classify, and analyze all network traffic from the `grok` command.
 
@@ -40,6 +42,7 @@ This toolkit lets you verify these findings yourself and monitor for changes.
 | 10 | Local logs record upload decisions but have limited retention | Confirmed |
 
 See [FINDINGS.md](FINDINGS.md) for detailed write-ups, methodology, and evidence for each finding.
+For what changed in v0.2.101 (new dormant Cursor-import capability, telemetry re-measure, gate shift), see [FINDINGS-v0.2.101.md](FINDINGS-v0.2.101.md).
 
 ## Recommendations (as of v0.2.99)
 
