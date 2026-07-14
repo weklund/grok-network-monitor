@@ -24,18 +24,22 @@ explicit:
 
 ## Comparison matrix
 
-| # | Finding | v0.2.99 | v0.2.101 | Evidence |
-|---|---------|---------|----------|----------|
-| 1 | Cursor chat-DB reader (`composerHeaders` SQL against Cursor's `state.vscdb`) | absent | **present** | [CNT] 0→1 |
-| 2 | `/import-cursor` slash command | n/a | **not registered** (only `/import`, `/import-claude`, `/import-map`) | [REG] |
-| 3 | Cursor reader reachable by a shipped command? | n/a | **no — dormant** | [RUN]+[REG] |
-| 4 | `cursor_*_enabled` server flags + `codex_sessions_enabled` | absent | **present** (parallel to existing `claude_*_enabled`) | [BIN] |
-| 5 | Generalized "foreign sessions" backend (Cursor + Codex slots) | — | **present** | [BIN] |
-| 6 | Codebase-upload infra (S3/GCS multipart, `disable_codebase_upload`, bucket `grok-code-session-traces`) | present | **unchanged** | [CNT] equal |
-| 7 | Mixpanel + grok.com dual telemetry | present | **present, persists** | [RUN] |
-| 8 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED` env var | present, no effect | **unchanged in binary** | [BIN] |
-| 9 | Binary string count | 89,072 | 89,196 (+124 net) | [CNT] |
-| 10 | Changelog entry for the update | — | **none** (bundled `CHANGELOG.md` stops at 0.2.99) | [BIN] |
+The **How we know** column says in plain words what kind of evidence backs each row,
+so the table stands on its own. The short tag in parentheses (`[CNT]`, `[RUN]`, …) maps
+to the confidence legend under the table.
+
+| # | Finding | v0.2.99 | v0.2.101 | How we know |
+|---|---------|---------|----------|-------------|
+| 1 | Cursor chat-DB reader (`composerHeaders` SQL against Cursor's `state.vscdb`) | absent | **present** | The SQL string count went 0 → 1 between the two binaries — added this version (count diff, [CNT]) |
+| 2 | `/import-cursor` slash command | n/a | **not registered** (only `/import`, `/import-claude`, `/import-map`) | Enumerated the compiled-in command registry; the string isn't there (registry, [REG]) |
+| 3 | Cursor reader reachable by a shipped command? | n/a | **no — dormant** | No command triggers it (registry) *and* it never fired in a live proxied session (observed traffic, [RUN]+[REG]) |
+| 4 | `cursor_*_enabled` server flags + `codex_sessions_enabled` | absent | **present** (parallel to existing `claude_*_enabled`) | The flag strings exist in the binary (present in binary, [BIN]) |
+| 5 | Generalized "foreign sessions" backend (Cursor + Codex slots) | — | **present** | Backend/slot strings exist in the binary (present in binary, [BIN]) |
+| 6 | Codebase-upload infra (S3/GCS multipart, `disable_codebase_upload`, bucket `grok-code-session-traces`) | present | **unchanged** | Same marker counts in both binaries — nothing added or removed (count diff, [CNT]) |
+| 7 | Mixpanel + grok.com dual telemetry | present | **present, persists** | Watched both fire over the wire this version (observed traffic, [RUN]) |
+| 8 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED` env var | present, no effect | **unchanged in binary** | The string is still present; its runtime effect was not re-measured (present in binary, [BIN]) |
+| 9 | Binary string count | 89,072 | 89,196 (+124 net) | Total `strings` count per binary (count diff, [CNT]) |
+| 10 | Changelog entry for the update | — | **none** (bundled `CHANGELOG.md` stops at 0.2.99) | The bundled changelog file has no 0.2.101 entry (present in binary, [BIN]) |
 
 ---
 

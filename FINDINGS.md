@@ -29,7 +29,7 @@ The rest of this document keeps the longer explanation, but the table above is t
 
 The grok binary contains code paths for packaging the current git repository as a git bundle and uploading it to xAI's storage infrastructure. This was confirmed by:
 
-- Decompiled binary analysis showing `upload_codebase`, `git_bundle`, and `storage` functions
+- Static string analysis of the binary (via `strings`, not decompilation) showing `upload_codebase`, `git_bundle`, and `storage` symbols
 - Network traces showing the client requesting and receiving a `disable_codebase_upload` flag from `/v1/settings`
 - The presence of `trace_upload_skipped` reason strings in OTEL traces when the flag is `true`
 

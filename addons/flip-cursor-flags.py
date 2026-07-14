@@ -132,12 +132,18 @@ class CursorFlagFlipper:
                 ctx.log.error(f"    {h['url']} <- {h['markers']}")
         elif self.flips:
             ctx.log.info(
-                "  Flags forced True, but no Cursor canaries left the machine."
+                "  Flags forced True, but no Cursor canaries left the machine "
+                "in THIS session."
             )
             ctx.log.info(
-                "  The reader likely needs a user-facing command (absent in v0.2.101)"
+                "  This does not prove the reader is unreachable — it may need a "
+                "user-facing command"
             )
-            ctx.log.info("  in addition to the server flag.")
+            ctx.log.info(
+                "  (none ships in v0.2.101), a specific trigger, or repeated/longer "
+                "sessions. Treat"
+            )
+            ctx.log.info("  a null result as 'not observed here', not 'confirmed dead'.")
         ctx.log.info("=" * 60)
 
 
