@@ -38,7 +38,7 @@ to the confidence legend under the table.
 | 6 | Codebase-upload infra (top-level: `serialize_repo_changes`, tar/GCS/storage-proxy, `disable_codebase_upload`, bucket `grok-code-session-traces`) | present | **core path persists, bundle-upload layer stripped** — see §"Upload path changes" below | Raw-byte count diff across both binaries (count diff, [CNT]) |
 | 7 | Mixpanel + grok.com dual telemetry | present | **present, persists** | Watched both fire over the wire this version (observed traffic, [RUN]) |
 | 8 | `GROK_WORKSPACE_DATA_COLLECTION_DISABLED` env var | present, no effect | **unchanged in binary** | The string is still present; its runtime effect was not re-measured (present in binary, [BIN]) |
-| 9 | Binary string count | 89,072 | 89,196 (+124 net) | Total `strings` count per binary (count diff, [CNT]) |
+| 9 | Binary size / string volume | 129,124,976 B; 364,177 lines | 128,899,824 B (−225 KB); 365,348 lines (`strings -a \| wc -l`) | Byte size + total `strings -a` line count per binary (count diff, [CNT]) |
 | 10 | Changelog entry for the update | — | **none** (bundled `CHANGELOG.md` stops at 0.2.99) | The bundled changelog file has no 0.2.101 entry (present in binary, [BIN]) |
 
 ---
